@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use next_loggers::{Logger, OpenTelemetryTransport, Options, Value as LogValue};
+use next_loggers::{JsonObject, Logger, OpenTelemetryTransport, Options, Value as LogValue};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{env, net::SocketAddr, sync::Arc};
@@ -46,6 +46,7 @@ fn merge_options() -> MergeOptions {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    const ROUTINE_ID: &str = "ores-routine-JBe7CmZ48gDE3lnwcl1Rd";
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -53,6 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
+    let logger = ores_logger();
     let app = Router::new()
         .route(
             "/healthz",
@@ -65,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(TraceLayer::new_for_http())
         .with_state(AppState {
             options: merge_options(),
-            logger: ores_logger(),
+            logger: logger.clone(),
         });
 
     let addr: SocketAddr = env::var("BIND_ADDR")
@@ -73,7 +75,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!(%addr, "Hacker House Medellín sync gateway listening");
-    axum::serve(listener, app).await?;
+    let _ = logger
+        .info(vec![LogValue::String("sync gateway listening".to_owned())])
+        .add_trace("ores-trace-RV1WFK-mqqmFOc8aghkHh", false)
+        .add_routine_id(ROUTINE_ID)
+        .send();
+    if let Err(error) = axum::serve(listener, app).await {
+        let _ = logger
+            .error(vec![LogValue::String(
+                "sync gateway server stopped with an I/O error".to_owned(),
+            )])
+            .add_trace("ores-trace-Tt411-LzdIu8cBbmOMofN", false)
+            .add_routine_id(ROUTINE_ID)
+            .send();
+        return Err(error.into());
+    }
     Ok(())
 }
 
@@ -81,6 +97,7 @@ async fn reconcile(
     State(state): State<AppState>,
     Json(request): Json<ReconcileRequest>,
 ) -> Result<Json<ReconcileResponse>, (StatusCode, Json<Value>)> {
+    const ROUTINE_ID: &str = "ores-routine-o4j7v9J_wcizTkyDNtInT";
     let merged = reconcile_values(
         &request.base,
         &request.incoming,
@@ -88,6 +105,20 @@ async fn reconcile(
         &state.logger,
     )
     .map_err(|code| {
+        // `code` is one of a fixed set of static failure categories; request
+        // payload values never reach the log record.
+        let _ = state
+            .logger
+            .warn(vec![LogValue::String(
+                "sync reconciliation rejected".to_owned(),
+            )])
+            .add_fields(JsonObject::from_iter([(
+                "reconcile.failure_code".to_owned(),
+                LogValue::String(code.to_owned()),
+            )]))
+            .add_trace("ores-trace-Y4HriM8GKzXC1HKvwxSX9", false)
+            .add_routine_id(ROUTINE_ID)
+            .send();
         (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(serde_json::json!({
@@ -144,12 +175,22 @@ fn ores_logger() -> Logger {
 }
 
 fn record_merge_observation(logger: &Logger, observation: &MergeObservation) {
+    const ROUTINE_ID: &str = "ores-routine-Gp1yKWX5fIEPxVlRKPzGx";
     let Ok(LogValue::Object(fields)) = serde_json::to_value(observation) else {
+        let _ = logger
+            .warn(vec![LogValue::String(
+                "sync reconciliation observation could not be encoded".to_owned(),
+            )])
+            .add_trace("ores-trace-4in20RfZoc2DvJQ7oeOb4", false)
+            .add_routine_id(ROUTINE_ID)
+            .send();
         return;
     };
     let _ = logger
         .info(vec![LogValue::String("sync reconciliation".to_owned())])
         .add_fields(fields)
+        .add_trace("ores-trace-wwgBnzKgej0Az6iVVtdez", false)
+        .add_routine_id(ROUTINE_ID)
         .send();
 }
 
