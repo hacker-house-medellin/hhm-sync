@@ -8,6 +8,24 @@ Initialized through `DEN-1950` as a testable `sync` foundation. Product behavior
 python3 scripts/verify_repo.py
 ```
 
+## Reconciliation boundary
+
+- The merge engine is `opto-sync/syncer.rs` 0.3.1, pinned to immutable commit
+  `946e23b0729c92ab3b4cadec8d4fbd540b663dd8`.
+- Requests are capped at 64 KiB before JSON extraction.
+- Responses identify the exact engine version and the compatibility contract.
+- Merge failures return bounded error codes rather than internal parser details.
+- Payload-free merge observations are emitted through the canonical
+  `ores-otel/ores.otel.log` Rust adapter pinned to immutable commit
+  `ca176fb6768a9750d262a536952268625ffd3a8a`.
+
+The compatibility endpoint still accepts generic JSON and is not an authority
+for identities, sessions, roles, access policy, or audit state. Do not expose it
+to untrusted networks until the API gateway enforces Shared Auth identity and
+HHM-owned document authorization. New offline mutation flows should use Opto
+Sync causal envelopes, idempotency, checkpoints, and tombstones rather than
+adding more timestamp-only merge behavior here.
+
 ## Environment secrets
 
 Secrets live in this repo **encrypted** with [sops](https://github.com/getsops/sops) + [age](https://github.com/FiloSottile/age):
