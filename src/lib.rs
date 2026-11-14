@@ -50,7 +50,7 @@ mod tests {
 
     #[test]
     fn rejects_ambiguous_leading_or_trailing_whitespace() {
-        for id in [" reservation", "reservation ", "\\u{2003}reservation"] {
+        for id in [" reservation", "reservation ", "\u{2003}reservation"] {
             assert_eq!(
                 Envelope { operation_id: id.to_string(), revision: 1, payload: () }.validate(),
                 Err("operation_id must not have surrounding whitespace")
